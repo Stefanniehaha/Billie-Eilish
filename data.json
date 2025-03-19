@@ -1,0 +1,127 @@
+# Import Natural Language ToolKit Corpus package
+import nltk
+nltk.download('punkt_tab')
+nltk.download('stopwords')
+nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger_eng')
+nltk.download('maxent_ne_chunker_tab')
+nltk.download('words')
+
+!pip install pyLDAvis
+#!pip install pandas==1.5.3
+
+import re
+import pandas as pd
+import numpy as np
+import gensim
+import gensim.corpora as corpora
+from gensim.models.phrases import Phrases, ENGLISH_CONNECTOR_WORDS
+from gensim.models import CoherenceModel# spaCy for preprocessing
+import matplotlib.pyplot as plt
+import pyLDAvis
+
+# NLTK Stop words
+from nltk.corpus import stopwords
+stop_words = stopwords.words('english')
+
+# LoadDataset
+# Response to how people think about Billie Eilish
+#
+df_data=pd.read_csv('https://github.com/Stefanniehaha/Billie-Eilish/blob/main/reddit.csv')
+df_data.head()
+
+# Lemmatization
+from nltk.stem import WordNetLemmatizer
+lemmatizer = WordNetLemmatizer()
+
+print("rocks :", lemmatizer.lemmatize("rocks"))
+print("corpora :", lemmatizer.lemmatize("corpora"))
+
+# Modify the lemmatize_data function in the previous
+def lemmatize_data(input):
+
+    # change to lower and remove spaces on either side
+    output = preprocess_tweets(input)
+
+    # remove punctuation except #
+    output = re.sub(',?.()[]!@#%-~', ' ', output)
+
+    # remove extra spaces in between
+    output = re.sub('[ ]+', ' ', output)
+
+    # remove stopwords
+    output = ' '.join([text for text in output.split() if text not in stop_words])
+
+    # Lemmatization
+    output = ' '.join([lemmatizer.lemmatize(text) for text in output.split()])
+
+    return output
+
+# Do lemmatization
+df_data["text_cleaned"] = [lemmatize_data(t).split() for t in df_data["text"]]
+df_data.head()
+
+# Build a Phrase Model
+df_texts = df_data['text_cleaned'].to_list()
+phrases = Phrases(df_texts, min_count=5, threshold=5, connector_words=ENGLISH_CONNECTOR_WORDS)
+# Two examples
+print(phrases[df_texts[3]])
+print(phrases[df_texts[51]])
+
+# Form Bigrams
+df_data['text_bigrams'] = [phrases[t] for t in df_texts]
+df_data.head()
+
+# Create Dictionary
+id2word = corpora.Dictionary(df_data['text_bigrams'].to_list())
+# Term Document Frequency
+corpus = [id2word.doc2bow(text) for text in df_data['text_bigrams'].to_list()]
+# View
+print(corpus[:2])
+
+# Set the number of topics, say 16
+t_num = 10
+lda_model = gensim.models.ldamodel.LdaModel(corpus=corpus,id2word=id2word,num_topics=t_num,alpha='auto',per_word_topics=True,passes=5,update_every=1)
+
+# Compute Perplexity Score (the lower the better)
+perplexity_lda = lda_model.log_perplexity(corpus)
+print(perplexity_lda)
+
+# Compute Coherence Score (the higher the better)
+coherence_model_lda = CoherenceModel(model=lda_model, texts=df_data['text_bigrams'].to_list(), dictionary=id2word, coherence='c_v')
+coherence_lda = coherence_model_lda.get_coherence()
+print(coherence_lda)
+
+import pyLDAvis.gensim
+# Visualize the topics
+pyLDAvis.enable_notebook()
+vis = pyLDAvis.gensim.prepare(lda_model, corpus, id2word)
+vis
+
+# Print the keyword of topics
+topics = lda_model.print_topics()
+for t in topics:
+  print(t)
+
+# Topic distribution for article
+topic_dis_all = lda_model.get_document_topics(corpus)
+
+# Topic distribution of the first article
+top_0 = topic_dis_all[0]
+print(df_data.iloc[0]['text'])
+top_0[np.argmax([p for num,p in top_0])]
+
+# Topic distribution of the 100th article
+top_100 = topic_dis_all[100]
+print(df_data.iloc[100]['text'])
+top_100[np.argmax([p for num,p in top_100])]
+
+# Display topic distribution
+df_data["topic"] = [t[np.argmax([p for num,p in t])][0] for t in topic_dis_all]
+df_data["topic"].value_counts() / len(df_data)
+
+# List topic 2's examples
+df_data.loc[df_data["topic"] == 2]['text'].head(10)
+
+# List topic 5's examples
+df_data.loc[df_data["topic"] == 5]['text'].head(10)
