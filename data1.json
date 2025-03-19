@@ -1,1 +1,3 @@
-
+# LoadDataset
+newsgrp_df = pd.read_json('https://github.com/Stefanniehaha/Billie-Eilish/blob/main/data.json')
+newsgrp_df.head()
